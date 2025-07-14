@@ -336,6 +336,22 @@ def obtener_vehiculo_por_qr(qr_code):
         print("Error en consulta por QR:", e)
         return jsonify({"status": "error", "message": "Error interno"}), 500
 
+@app.route("/vehicles/historial/<int:idvehiculo>", methods=["GET"])
+def historial_vehiculo(idvehiculo):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT TOP 10 Salida, Entrada, KmSalida, KmEntrada, TanqueSalida, TanqueEntrada
+        FROM Desplazamiento_2
+        WHERE IdVehiculo = ?
+        ORDER BY IdDesplazamiento DESC
+    """, (idvehiculo,))
+    rows = cursor.fetchall()
+    columnas = [column[0] for column in cursor.description]
+    desplazamientos = [dict(zip(columnas, row)) for row in rows]
+    conn.close()
+    return jsonify(desplazamientos)
+
 
 # Iniciar servidor
 if __name__ == '__main__':
