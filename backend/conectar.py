@@ -1,11 +1,25 @@
 import pyodbc
+import traceback  # al inicio del archivo
 from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
 from datetime import datetime
-
-
+import os
+import time  
+from werkzeug.utils import secure_filename  # ✅ Importación necesaria
 
 app = Flask(__name__)
+UPLOAD_FOLDER = r"D:\JuanFrancisco\backend\uploads"
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+
+
+
+
+# Crear carpeta si no existe
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+
+
 CORS(app)
 
 DB_CONNECTION = "DRIVER={SQL Server};SERVER=DESKTOP-HT478MM;DATABASE=ControlVehicular;UID=UserCVehicular;PWD=V3h1cul9r"
@@ -341,7 +355,7 @@ def historial_vehiculo(idvehiculo):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT TOP 10 Salida, Entrada, KmSalida, KmEntrada, TanqueSalida, TanqueEntrada
+        SELECT TOP 2 IdDesplazamiento, Salida, Entrada, KmSalida, KmEntrada, TanqueSalida, TanqueEntrada
         FROM Desplazamiento_2
         WHERE IdVehiculo = ?
         ORDER BY IdDesplazamiento DESC
@@ -351,7 +365,212 @@ def historial_vehiculo(idvehiculo):
     desplazamientos = [dict(zip(columnas, row)) for row in rows]
     conn.close()
     return jsonify(desplazamientos)
+'''
+@app.route("/subir-imagen", methods=["POST"])
+def subir_imagen():
+    if "imagenes" not in request.files:
+        return jsonify({"error": "No se encontraron archivos"}), 400
 
+    archivos = request.files.getlist("imagenes")
+    allowed_ext = {"png", "jpg", "jpeg", "gif"}
+
+    upload_folder = "uploads"
+    if not os.path.exists(upload_folder):
+        os.makedirs(upload_folder)
+
+    nombres_guardados = []
+
+    for archivo in archivos:
+        if archivo.filename == "":
+            continue
+
+        # Asegurarse que el archivo tiene extensión
+        if "." not in archivo.filename:
+            continue
+
+        ext = archivo.filename.rsplit(".", 1)[1].lower()
+        if ext not in allowed_ext:
+            continue
+
+        filename = secure_filename(archivo.filename)
+        save_path = os.path.join(upload_folder, filename)
+
+        # Evitar sobrescribir archivos existentes
+        count = 1
+        base, extension = os.path.splitext(filename)
+        while os.path.exists(save_path):
+            filename = f"{base}_{count}{extension}"
+            save_path = os.path.join(upload_folder, filename)
+            count += 1
+
+        archivo.save(save_path)
+        nombres_guardados.append(filename)
+
+    if not nombres_guardados:
+        return jsonify({"error": "No se subieron archivos válidos"}), 400
+
+    return jsonify({"mensaje": "Imágenes subidas correctamente", "nombres": nombres_guardados}), 201
+'''
+
+
+@app.route("/evento/agregar", methods=["POST"])
+def agregar_evento():
+    data = request.json
+    print("Datos recibidos en /evento/agregar:", data)
+    observacion = data.get("Observacion")
+    id_desplazamiento = data.get("IdDesplazamiento")
+
+    if not observacion or id_desplazamiento is None:
+        print("❌ Faltan datos requeridos")
+        return jsonify({"error": "Faltan datos requeridos"}), 400
+
+    try:
+        id_desplazamiento_int = int(id_desplazamiento)
+    except (ValueError, TypeError):
+        print("❌ IdDesplazamiento inválido")
+        return jsonify({"error": "IdDesplazamiento debe ser un entero válido"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            EXEC ControlVehicular.dbo.CV_InsertarEvento 
+                @Observacion = ?, 
+                @IdDesplazamiento = ?
+        """, (observacion, id_desplazamiento_int))
+
+        cursor.nextset()  # <<< Añadido aquí
+
+        row = cursor.fetchone()
+        if not row:
+            raise Exception("No se devolvió ningún ID desde el procedimiento.")
+
+        id_evento = int(row[0])
+
+        # Confirmar transacción
+        conn.commit()
+
+        print(f"✅ Evento insertado con ID: {id_evento}")
+        conn.close()
+
+        return jsonify({
+            "mensaje": "Evento agregado correctamente",
+            "IdEvento": id_evento
+        }), 201
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        print("❌ Error al agregar evento:")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Error interno al agregar evento"
+        }), 500
+
+
+
+
+
+@app.route("/upload-image", methods=["POST"])
+def upload_images():
+    if "imagenes" not in request.files:
+        return jsonify({"error": "No se encontraron archivos"}), 400
+
+    archivos = request.files.getlist("imagenes")
+    allowed_ext = {"png", "jpg", "jpeg", "gif"}
+
+    import os
+    from werkzeug.utils import secure_filename
+
+    upload_folder = "uploads"
+    if not os.path.exists(upload_folder):
+        os.makedirs(upload_folder)
+
+    nombres_guardados = []
+
+    for archivo in archivos:
+        if archivo.filename == "":
+            continue
+        ext = archivo.filename.rsplit(".", 1)[1].lower()
+        if ext not in allowed_ext:
+            continue
+        filename = secure_filename(archivo.filename)
+        save_path = os.path.join(upload_folder, filename)
+
+        # Evitar duplicados
+        count = 1
+        base, ext = os.path.splitext(filename)
+        while os.path.exists(save_path):
+            filename = f"{base}_{count}{ext}"
+            save_path = os.path.join(upload_folder, filename)
+            count += 1
+
+        archivo.save(save_path)
+        nombres_guardados.append(filename)
+
+    if not nombres_guardados:
+        return jsonify({"error": "No se subieron archivos válidos"}), 400
+
+    return jsonify({"mensaje": "Imágenes subidas correctamente", "nombres": nombres_guardados}), 201
+
+@app.route('/desplazamientos/ultimo/<int:id_vehiculo>', methods=['GET'])
+def obtener_ultimo_desplazamiento(id_vehiculo):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT TOP 1 IdDesplazamiento
+        FROM Desplazamiento_2
+        WHERE IdVehiculo = ?
+        ORDER BY IdDesplazamiento DESC
+    """, id_vehiculo)
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return jsonify({'IdDesplazamiento': row.IdDesplazamiento})
+    else:
+        return jsonify({'error': 'No se encontró desplazamiento'}), 404
+
+@app.route('/fotos/agregar', methods=['POST'])
+def agregar_fotos():
+    try:
+        archivos = request.files.getlist('fotos')
+        if not archivos:
+            return jsonify({'error': 'No se encontraron archivos con la clave "fotos"'}), 400
+
+        idEvento = request.form.get('idEvento')
+        if not idEvento:
+            return jsonify({'error': 'idEvento es obligatorio'}), 400
+
+
+        print(idEvento)
+        print(archivos)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        for idx, archivo in enumerate(archivos):
+            # if archivo.filename == '':
+            #     continue
+
+            nombre_archivo = f"foto_{int(time.time())}_{idx}.png"
+            print(nombre_archivo)
+            ruta_archivo = os.path.join(app.config['UPLOAD_FOLDER'], nombre_archivo)
+            print(ruta_archivo)
+            archivo.save(ruta_archivo)
+
+            # Solo guardar el nombre del archivo, no la ruta completa
+            cursor.execute("INSERT INTO Fotos (idEvento, Imagen) VALUES (?, ?)", (idEvento, nombre_archivo))
+
+        conn.commit()
+        # cursor.close()
+        conn.close()
+
+        return jsonify({'mensaje': 'Fotos subidas correctamente'}), 200
+
+    except Exception as e:
+        return jsonify({'error': f'Error al subir fotos: {str(e)}'}), 500
 
 # Iniciar servidor
 if __name__ == '__main__':
