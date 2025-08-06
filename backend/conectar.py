@@ -514,6 +514,28 @@ def upload_images():
         return jsonify({"error": "No se subieron archivos válidos"}), 400
 
     return jsonify({"mensaje": "Imágenes subidas correctamente", "nombres": nombres_guardados}), 201
+'''
+@app.route('/agregar/roles/<int:id_usuario>', methods=['POST'])
+def agregar_rol(id_usuario):
+    data=request.json
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(""" 
+        INSERT INTO Roles
+        (idusuario,rol,status)
+        VALUES (?,?,?)
+
+""", (
+    id_usuario,data["rol"],data["status"]
+    ))
+    conn.commit()
+    conn.close()
+    return jsonify({"mensaje": "ROl asignado"}), 201
+        
+'''
+
+
+
 
 @app.route('/desplazamientos/ultimo/<int:id_vehiculo>', methods=['GET'])
 def obtener_ultimo_desplazamiento(id_vehiculo):
@@ -571,6 +593,76 @@ def agregar_fotos():
 
     except Exception as e:
         return jsonify({'error': f'Error al subir fotos: {str(e)}'}), 500
+
+
+
+#endpoint para revisar rol en loggin
+@app.route('/login', methods=['POST'])
+def login_usuario():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    if not username or not password:
+        return jsonify({'error': 'Faltan credenciales'}), 400
+
+    try:
+        conn = pyodbc.connect("DRIVER={SQL Server};SERVER=DESKTOP-HT478MM;DATABASE=IntranetCRT;UID=UserCVehicular;PWD=V3h1cul9r")
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT u.IdUsuario, u.Nombre, u.UserName, u.UsuarioInterno, r.Rol
+            FROM IntranetCRT..NetUsuarios u
+            LEFT JOIN ControlVehicular.dbo.Roles r ON u.IdUsuario = r.IdUsuario AND r.Status = 1
+            WHERE u.UserName = ? AND u.Password = ? AND u.Activo = 1
+        """, (username, password))
+
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'result': {'success': False, 'message': 'Credenciales incorrectas'}}), 401
+
+        usuario = {
+            'idUsuario': row.IdUsuario,
+            'nombre': row.Nombre,
+            'usuarioInterno': row.UsuarioInterno,
+            'rol': row.Rol or 'usuario'  # Si no tiene rol asignado, se le da uno genérico
+        }
+
+        return jsonify({'result': {'success': True, 'user': usuario}})
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': 'Error interno del servidor'}), 500
+
+    finally:
+        conn.close()
+@app.route('/agregar/roles/<int:id_usuario>', methods=['POST'])
+def agregar_rol(id_usuario):
+    data = request.json
+    rol = data.get('rol')
+    status = data.get('status', 1)
+
+    if not rol:
+        return jsonify({'error': 'Falta el rol'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            INSERT INTO Roles (idusuario, rol, status)
+            VALUES (?, ?, ?)
+            """, (id_usuario, rol, status))
+        conn.commit()
+        return jsonify({'mensaje': 'Rol asignado correctamente'}), 201
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+
+
 
 # Iniciar servidor
 if __name__ == '__main__':
