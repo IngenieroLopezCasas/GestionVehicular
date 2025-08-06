@@ -616,16 +616,20 @@ def login_usuario():
             LEFT JOIN ControlVehicular.dbo.Roles r ON u.IdUsuario = r.IdUsuario AND r.Status = 1
             WHERE u.UserName = ? AND u.Password = ? AND u.Activo = 1
         """, (username, password))
-
         row = cursor.fetchone()
         if not row:
             return jsonify({'result': {'success': False, 'message': 'Credenciales incorrectas'}}), 401
 
+        id_usuario = row[0]
+        nombre = row[1]
+        usuario_interno = row[3]
+        rol = row[4] if row[4] is not None else 'usuario'
+
         usuario = {
-            'idUsuario': row.IdUsuario,
-            'nombre': row.Nombre,
-            'usuarioInterno': row.UsuarioInterno,
-            'rol': row.Rol or 'usuario'  # Si no tiene rol asignado, se le da uno genérico
+            'idUsuario': id_usuario,
+            'nombre': nombre,
+            'usuarioInterno': usuario_interno,
+            'rol': rol
         }
 
         return jsonify({'result': {'success': True, 'user': usuario}})
